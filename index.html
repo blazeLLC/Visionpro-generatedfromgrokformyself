@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"/>
-  <title>Vision Pro Menu - Stereo + Joy-Con StickR (axes[2/3])</title>
+  <title>Vision Pro Menu - Stereo + Joy-Con StickR (Locked axes[2/3])</title>
   <style>
     * { margin:0; padding:0; box-sizing:border-box; }
     html, body { height:100%; overflow:hidden; margin:0; background:#000; font-family: -apple-system, sans-serif; color:white; }
@@ -108,7 +108,7 @@
 </head>
 <body>
 
-  <div id="status">Joy-Con (R): Right stick (axes[2/3]) to move cursor. ZR to select. Press any button if no movement.</div>
+  <div id="status">Joy-Con (R): Right stick (locked axes[2/3]) to move cursor. Hold SL + stick to debug raw values. ZR to select. Press any button if stuck.</div>
   <div id="cursor"></div>
 
   <div id="container">
@@ -165,6 +165,8 @@
     }
     startCamera();
 
+    let debugSL = false;
+
     function pollGamepad() {
       const gps = navigator.getGamepads ? navigator.getGamepads() : [];
       let detected = false;
@@ -173,12 +175,15 @@
         if (!gp) continue;
         detected = true;
 
-        // Hardcode priority to axes[2/3] for Joy-Con (R) with 4 axes
+        // Locked to axes[2/3] for Joy-Con (R) with 4 axes
         let stickX = gp.axes[2] || 0;
         let stickY = gp.axes[3] || 0;
 
+        // Debug mode: Hold SL (often button[4] or button[6]) to show raw values
+        debugSL = gp.buttons[4]?.pressed || gp.buttons[6]?.pressed || false;
+
         if (Math.abs(stickX) > deadzone || Math.abs(stickY) > deadzone) {
-          status.textContent = "Joy-Con connected | Right stick active (axes[2/3])";
+          status.textContent = `Right stick active (axes[2/3]): X=${stickX.toFixed(2)}, Y=${stickY.toFixed(2)}`;
 
           cursorX += stickX * sensitivity;
           cursorY -= stickY * sensitivity;
@@ -189,7 +194,7 @@
           cursor.style.left = cursorX + 'px';
           cursor.style.top = cursorY + 'px';
 
-          // Highlight closest icon
+          // Highlight closest
           let closest = null;
           let minDist = Infinity;
           icons.forEach(i => {
@@ -201,9 +206,11 @@
             if (dist < minDist) { minDist = dist; closest = i; }
           });
           if (closest && minDist < 160) closest.classList.add('highlight');
+        } else if (debugSL) {
+          status.textContent = `Debug SL held: Raw X=${stickX.toFixed(2)}, Y=${stickY.toFixed(2)}`;
         }
 
-        // ZR detection (flexible)
+        // ZR
         const zrPressed = gp.buttons[7]?.pressed || (gp.axes[5] > 0.4) || gp.buttons[5]?.pressed || gp.buttons[6]?.pressed;
         if (zrPressed) {
           let closest = null;
@@ -219,13 +226,13 @@
         }
       }
 
-      if (!detected) status.textContent = "No Joy-Con detected - press any button or reconnect.";
+      if (!detected) status.textContent = "No Joy-Con - press any button or re-pair Bluetooth.";
       requestAnimationFrame(pollGamepad);
     }
     pollGamepad();
 
     window.addEventListener('gamepadconnected', (e) => {
-      status.textContent = `Joy-Con connected | Axes: ${e.gamepad.axes.length} - Using [2/3] for right stick`;
+      status.textContent = `Joy-Con connected | Axes: ${e.gamepad.axes.length} - Locked to [2/3] for right stick`;
       console.log('Joy-Con:', e.gamepad);
     });
 
