@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"/>
-  <title>Vision Pro Menu - Stereo No Distort</title>
+  <title>Vision Pro Menu - Stereo No Distort + Joy-Con</title>
   <style>
     * { margin:0; padding:0; box-sizing:border-box; }
     html, body { height:100%; overflow:hidden; margin:0; background:#000; font-family: -apple-system, sans-serif; color:white; }
@@ -150,7 +150,7 @@
     }
     startCamera();
 
-    // Head-gaze with 4-second dwell
+    // Head-gaze with 4-second dwell (kept as fallback)
     let currentIcon = null;
     let dwellTimer = null;
     let lastBeta = 0, lastGamma = 0;
@@ -196,9 +196,31 @@
       }
     }, true);
 
+    // Joy-Con (R) support for selection
+    let gamepad = null;
+    window.addEventListener('gamepadconnected', (e) => {
+      gamepad = e.gamepad;
+      console.log('Joy-Con connected:', gamepad.id);  // Should show "Joy-Con (R)" or similar
+    });
+
+    function checkGamepad() {
+      const gps = navigator.getGamepads();
+      if (gps && gps[0]) {  // Joy-Con R often index 0
+        const gp = gps[0];
+        // Joy-Con R buttons: A is often button 0, B=1, X=3, Y=2 (may vary)
+        if (gp.buttons[0].pressed) {  // Press A to select highlighted icon
+          if (currentIcon) {
+            selectItem(currentIcon.dataset.action);
+          }
+        }
+      }
+      requestAnimationFrame(checkGamepad);
+    }
+    checkGamepad();
+
     function selectItem(action) {
-      alert(`Selected: ${action}! (after 4s gaze)`);
-      // Change to real action, e.g., open URL or trigger something
+      alert(`Selected: ${action}!`);
+      // Change to real action, e.g., window.location = `https://${action}.com`
     }
 
     // Fullscreen on interaction
@@ -208,5 +230,4 @@
   </script>
 
 </body>
-
 </html>
