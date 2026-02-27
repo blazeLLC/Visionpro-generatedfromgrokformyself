@@ -3,26 +3,14 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"/>
-  <title>Vision Pro Menu - Stereo + Joy-Con Joystick + ZR Fixed</title>
+  <title>Vision Pro Menu - Stereo + Joy-Con Fixed Joystick</title>
   <style>
     * { margin:0; padding:0; box-sizing:border-box; }
     html, body { height:100%; overflow:hidden; margin:0; background:#000; font-family: -apple-system, sans-serif; color:white; }
     body { perspective:1000px; }
 
-    #container {
-      position: relative;
-      width: 100%;
-      height: 100%;
-      display: flex;
-    }
-
-    .eye {
-      width: 50%;
-      height: 100%;
-      position: relative;
-      overflow: hidden;
-    }
-
+    #container { position: relative; width: 100%; height: 100%; display: flex; }
+    .eye { width: 50%; height: 100%; position: relative; overflow: hidden; }
     #left-eye { transform: translateX(-4%); }
     #right-eye { transform: translateX(4%); }
 
@@ -52,7 +40,6 @@
       gap: 55px;
       max-width: 800px;
       justify-content: center;
-      position: relative;
     }
 
     .app-icon {
@@ -68,7 +55,7 @@
       align-items: center;
       justify-content: center;
       font-size: 62px;
-      transition: all 0.5s cubic-bezier(0.23, 1, 0.32, 1);
+      transition: all 0.4s;
       position: relative;
     }
 
@@ -86,14 +73,11 @@
       font-size: 15px;
       opacity: 0.9;
       text-shadow: 0 4px 14px black;
-      transition: all 0.5s;
+      transition: all 0.4s;
       white-space: nowrap;
     }
 
-    .app-icon.highlight .app-label {
-      opacity: 1;
-      transform: translateX(-50%) translateY(-16px);
-    }
+    .app-icon.highlight .app-label { opacity: 1; transform: translateX(-50%) translateY(-16px); }
 
     #status {
       position: fixed;
@@ -109,22 +93,22 @@
 
     #cursor {
       position: absolute;
-      width: 24px;
-      height: 24px;
+      width: 28px;
+      height: 28px;
       background: rgba(100, 220, 255, 0.9);
-      border: 3px solid white;
+      border: 4px solid white;
       border-radius: 50%;
       pointer-events: none;
       transform: translate(-50%, -50%);
       z-index: 99;
-      box-shadow: 0 0 15px rgba(100, 220, 255, 0.8);
-      transition: all 0.08s linear;
+      box-shadow: 0 0 20px rgba(100, 220, 255, 0.9);
+      transition: left 0.1s, top 0.1s;
     }
   </style>
 </head>
 <body>
 
-  <div id="status">Joy-Con (R): Right joystick to move blue cursor & aim, ZR trigger to select. Connect & press any button if not detected.</div>
+  <div id="status">Joy-Con (R): Right stick to move cursor. ZR to select. Press any button to activate if stuck.</div>
   <div id="cursor"></div>
 
   <div id="container">
@@ -163,42 +147,52 @@
     const status = document.getElementById('status');
     const cursor = document.getElementById('cursor');
 
-    // Start cursor in center
     let cursorX = window.innerWidth / 2;
     let cursorY = window.innerHeight / 2;
-    const sensitivity = 250; // Lower = slower/more precise
+    const sensitivity = 220;
+    const deadzone = 0.18;
 
     // Passthrough
     async function startCamera() {
       try {
-        const stream = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: "environment" }
-        });
+        const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
         videos.forEach(v => v.srcObject = stream);
-        status.textContent += " | Camera working";
+        status.textContent += " | Camera OK";
       } catch (err) {
         console.error("Camera:", err);
-        status.textContent += " | Camera issue: " + err.name;
+        status.textContent += " | Camera failed";
       }
     }
     startCamera();
 
-    // Gamepad polling
     function pollGamepad() {
       const gps = navigator.getGamepads ? navigator.getGamepads() : [];
-      let connected = false;
+      let detected = false;
 
       for (let gp of gps) {
         if (!gp) continue;
-        connected = true;
+        detected = true;
 
-        // Try different axis pairs for right stick (Joy-Con R non-standard)
-        let stickX = gp.axes[2] !== undefined ? gp.axes[2] : gp.axes[0] || 0;
-        let stickY = gp.axes[3] !== undefined ? gp.axes[3] : gp.axes[1] || 0;
+        // Try different axis pairs for right stick
+        let stickX = 0, stickY = 0;
+        // Common for single Joy-Con R: axes[2]=X, axes[3]=Y
+        if (Math.abs(gp.axes[2] || 0) > deadzone || Math.abs(gp.axes[3] || 0) > deadzone) {
+          stickX = gp.axes[2] || 0;
+          stickY = gp.axes[3] || 0;
+          status.textContent = "Using axes[2/3] for stickR";
+        } else if (Math.abs(gp.axes[0] || 0) > deadzone || Math.abs(gp.axes[1] || 0) > deadzone) {
+          stickX = gp.axes[0] || 0;
+          stickY = gp.axes[1] || 0;
+          status.textContent = "Using axes[0/1] for stickR";
+        } else if (gp.axes.length >= 6 && (Math.abs(gp.axes[4] || 0) > deadzone || Math.abs(gp.axes[5] || 0) > deadzone)) {
+          stickX = gp.axes[4] || 0;
+          stickY = gp.axes[5] || 0;
+          status.textContent = "Using axes[4/5] for stickR";
+        }
 
-        if (Math.abs(stickX) > 0.15 || Math.abs(stickY) > 0.15) {
+        if (Math.abs(stickX) > deadzone || Math.abs(stickY) > deadzone) {
           cursorX += stickX * sensitivity;
-          cursorY -= stickY * sensitivity; // Invert Y for natural control
+          cursorY -= stickY * sensitivity; // Invert Y
 
           cursorX = Math.max(0, Math.min(window.innerWidth, cursorX));
           cursorY = Math.max(0, Math.min(window.innerHeight, cursorY));
@@ -206,77 +200,48 @@
           cursor.style.left = cursorX + 'px';
           cursor.style.top = cursorY + 'px';
 
-          // Highlight closest icon to cursor
+          // Highlight closest
           let closest = null;
           let minDist = Infinity;
-
-          icons.forEach(icon => {
-            icon.classList.remove('highlight');
-            const rect = icon.getBoundingClientRect();
-            const cx = rect.left + rect.width / 2;
-            const cy = rect.top + rect.height / 2;
-            const dist = Math.hypot(cx - cursorX, cy - cursorY);
-            if (dist < minDist) {
-              minDist = dist;
-              closest = icon;
-            }
+          icons.forEach(i => {
+            i.classList.remove('highlight');
+            const rect = i.getBoundingClientRect();
+            const dist = Math.hypot((rect.left + rect.width/2) - cursorX, (rect.top + rect.height/2) - cursorY);
+            if (dist < minDist) { minDist = dist; closest = i; }
           });
-
-          if (closest && minDist < 180) {
-            closest.classList.add('highlight');
-          }
+          if (closest && minDist < 160) closest.classList.add('highlight');
         }
 
-        // ZR trigger: Try common mappings (button[7], axes[5] analog, button[5/6])
-        const zrPressed = (gp.buttons[7]?.pressed) ||
-                          (gp.axes[5] > 0.4) ||
-                          (gp.buttons[5]?.pressed) ||
-                          (gp.buttons[6]?.pressed);
-
+        // ZR press detection
+        const zrPressed = gp.buttons[7]?.pressed || (gp.axes[5] > 0.4) || gp.buttons[5]?.pressed || gp.buttons[6]?.pressed;
         if (zrPressed) {
           let closest = null;
           let minDist = Infinity;
-
-          icons.forEach(icon => {
-            const rect = icon.getBoundingClientRect();
-            const cx = rect.left + rect.width / 2;
-            const cy = rect.top + rect.height / 2;
-            const dist = Math.hypot(cx - cursorX, cy - cursorY);
-            if (dist < minDist) {
-              minDist = dist;
-              closest = icon;
-            }
+          icons.forEach(i => {
+            const rect = i.getBoundingClientRect();
+            const dist = Math.hypot((rect.left + rect.width/2) - cursorX, (rect.top + rect.height/2) - cursorY);
+            if (dist < minDist) { minDist = dist; closest = i; }
           });
-
-          if (closest && minDist < 180) {
-            selectItem(closest.dataset.action);
-          }
+          if (closest && minDist < 160) selectItem(closest.dataset.action);
         }
       }
 
-      if (!connected) {
-        status.textContent = "No Joy-Con detected. Press any button or reconnect.";
-      }
-
+      if (!detected) status.textContent = "No Joy-Con detected - press any button or reconnect via Bluetooth.";
       requestAnimationFrame(pollGamepad);
     }
     pollGamepad();
 
     window.addEventListener('gamepadconnected', (e) => {
-      status.textContent = "Joy-Con (R) connected! Joystick to move cursor, ZR to select.";
-      console.log('Connected Joy-Con:', e.gamepad.id, 'Axes:', e.gamepad.axes.length, 'Buttons:', e.gamepad.buttons.length);
+      status.textContent = "Joy-Con connected! Try moving right stick. Axes detected: " + (e.gamepad.axes.length || 'unknown');
+      console.log('Joy-Con:', e.gamepad.id, 'Axes count:', e.gamepad.axes.length);
     });
 
     function selectItem(action) {
       alert(`Selected: ${action}!`);
-      status.textContent = `Selected: ${action} (ZR pressed)`;
+      status.textContent = `Selected: ${action}`;
     }
 
-    // Fullscreen
-    document.addEventListener('touchend', () => {
-      document.documentElement.requestFullscreen?.();
-    }, { once: true });
+    document.addEventListener('touchend', () => document.documentElement.requestFullscreen?.(), { once: true });
   </script>
-
 </body>
 </html>
