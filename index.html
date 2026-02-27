@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"/>
-  <title>Vision Pro Menu - Stereo No Distort + Joy-Con</title>
+  <title>Vision Pro Menu - Stereo + Joy-Con Joystick + ZR</title>
   <style>
     * { margin:0; padding:0; box-sizing:border-box; }
     html, body { height:100%; overflow:hidden; margin:0; background:#000; font-family: -apple-system, sans-serif; color:white; }
@@ -23,8 +23,8 @@
       overflow: hidden;
     }
 
-    #left-eye { transform: translateX(-4%); }  /* Slight outward shift for left eye IPD */
-    #right-eye { transform: translateX(4%); }  /* Slight outward shift for right eye IPD */
+    #left-eye { transform: translateX(-4%); }
+    #right-eye { transform: translateX(4%); }
 
     .passthrough {
       position: absolute;
@@ -33,7 +33,7 @@
       height: 100%;
       object-fit: cover;
       opacity: 0.5;
-      transform: scale(1.12);  /* Minor zoom to fill view without heavy distortion */
+      transform: scale(1.12);
     }
 
     .scene {
@@ -43,7 +43,7 @@
       align-items: center;
       justify-content: center;
       pointer-events: none;
-      transform: rotateX(5deg) translateZ(-60px);  /* Subtle 3D tilt for depth feel */
+      transform: rotateX(5deg) translateZ(-60px);
     }
 
     .app-grid {
@@ -52,6 +52,7 @@
       gap: 55px;
       max-width: 800px;
       justify-content: center;
+      position: relative;
     }
 
     .app-icon {
@@ -62,9 +63,7 @@
       backdrop-filter: blur(24px) saturate(200%);
       -webkit-backdrop-filter: blur(24px) saturate(200%);
       border: 1px solid rgba(255,255,255,0.22);
-      box-shadow: 
-        0 12px 45px rgba(0,0,0,0.65),
-        inset 0 3px 14px rgba(255,255,255,0.25);
+      box-shadow: 0 12px 45px rgba(0,0,0,0.65), inset 0 3px 14px rgba(255,255,255,0.25);
       display: flex;
       align-items: center;
       justify-content: center;
@@ -75,9 +74,7 @@
 
     .app-icon.highlight {
       transform: translateZ(180px) scale(1.32);
-      box-shadow: 
-        0 40px 100px rgba(0,0,0,0.85),
-        inset 0 10px 35px rgba(255,255,255,0.5);
+      box-shadow: 0 40px 100px rgba(0,0,0,0.85), inset 0 10px 35px rgba(255,255,255,0.5);
       border-color: rgba(90, 210, 255, 0.7);
     }
 
@@ -97,12 +94,37 @@
       opacity: 1;
       transform: translateX(-50%) translateY(-16px);
     }
+
+    #status {
+      position: fixed;
+      top: 10px;
+      left: 10px;
+      background: rgba(0,0,0,0.6);
+      padding: 10px;
+      border-radius: 8px;
+      z-index: 100;
+      font-size: 14px;
+    }
+
+    #cursor {
+      position: absolute;
+      width: 20px;
+      height: 20px;
+      background: rgba(100, 220, 255, 0.8);
+      border-radius: 50%;
+      pointer-events: none;
+      transform: translate(-50%, -50%);
+      z-index: 99;
+      transition: all 0.1s;
+    }
   </style>
 </head>
 <body>
 
+  <div id="status">Joy-Con (R): Use right joystick to aim, ZR to select. Connect if not detected.</div>
+  <div id="cursor"></div>
+
   <div id="container">
-    <!-- Left eye view -->
     <div class="eye" id="left-eye">
       <video class="passthrough" autoplay muted playsinline></video>
       <div class="scene">
@@ -117,7 +139,6 @@
       </div>
     </div>
 
-    <!-- Right eye view -->
     <div class="eye" id="right-eye">
       <video class="passthrough" autoplay muted playsinline></video>
       <div class="scene">
@@ -136,94 +157,91 @@
   <script>
     const videos = document.querySelectorAll('.passthrough');
     const icons = document.querySelectorAll('.app-icon');
+    const status = document.getElementById('status');
+    const cursor = document.getElementById('cursor');
 
-    // Rear camera passthrough for both eyes
+    // Passthrough camera
     async function startCamera() {
       try {
         const stream = await navigator.mediaDevices.getUserMedia({
           video: { facingMode: "environment" }
         });
         videos.forEach(v => v.srcObject = stream);
+        status.textContent += " | Camera OK";
       } catch (err) {
-        console.error("Camera failed:", err);
+        console.error("Camera error:", err);
+        status.textContent += " | Camera failed";
       }
     }
     startCamera();
 
-    // Head-gaze with 4-second dwell (kept as fallback)
-    let currentIcon = null;
-    let dwellTimer = null;
-    let lastBeta = 0, lastGamma = 0;
+    // Virtual cursor position (screen center start)
+    let cursorX = window.innerWidth / 2;
+    let cursorY = window.innerHeight / 2;
+    const sensitivity = 300; // Adjust for stick feel (higher = faster movement)
 
-    window.addEventListener('deviceorientation', (e) => {
-      if (!e.beta || !e.gamma) return;
+    // Joy-Con polling
+    function pollGamepad() {
+      const gps = navigator.getGamepads ? navigator.getGamepads() : [];
+      for (let gp of gps) {
+        if (!gp) continue;
 
-      lastBeta = lastBeta * 0.7 + e.beta * 0.3;
-      lastGamma = lastGamma * 0.7 + e.gamma * 0.3;
+        // Right analog stick (Joy-Con R): axes[0] = X (left/right), axes[1] = Y (up/down)
+        const stickX = gp.axes[0] || 0;
+        const stickY = gp.axes[1] || 0;
 
-      const gazeX = lastGamma * 15;   // Tuned sensitivity for stereo split
-      const gazeY = lastBeta * 12;
+        // Move cursor based on stick deflection
+        if (Math.abs(stickX) > 0.1 || Math.abs(stickY) > 0.1) {
+          cursorX += stickX * sensitivity;
+          cursorY -= stickY * sensitivity; // Invert Y for natural up/down
 
-      let closest = null;
-      let minDist = Infinity;
+          // Clamp to screen bounds
+          cursorX = Math.max(0, Math.min(window.innerWidth, cursorX));
+          cursorY = Math.max(0, Math.min(window.innerHeight, cursorY));
 
-      icons.forEach(icon => {
-        const rect = icon.getBoundingClientRect();
-        const cx = rect.left + rect.width / 2 - window.innerWidth / 2;
-        const cy = rect.top + rect.height / 2 - window.innerHeight / 2;
-
-        const dist = Math.hypot(cx - gazeX, cy - gazeY);
-        if (dist < minDist) {
-          minDist = dist;
-          closest = icon;
+          cursor.style.left = cursorX + 'px';
+          cursor.style.top = cursorY + 'px';
         }
-      });
 
-      icons.forEach(i => i.classList.remove('highlight'));
+        // ZR trigger: Often button[7] (digital) or axes[3] (analog >0.5 pressed)
+        const zrPressed = (gp.buttons[7]?.pressed) || (gp.axes[3] > 0.5);
 
-      if (closest && minDist < 300) {
-        closest.classList.add('highlight');
-        if (currentIcon !== closest) {
-          if (dwellTimer) clearTimeout(dwellTimer);
-          currentIcon = closest;
-          dwellTimer = setTimeout(() => {
-            selectItem(currentIcon.dataset.action);
-          }, 4000);
-        }
-      } else {
-        currentIcon = null;
-        if (dwellTimer) clearTimeout(dwellTimer);
-      }
-    }, true);
+        if (zrPressed) {
+          let closest = null;
+          let minDist = Infinity;
 
-    // Joy-Con (R) support for selection
-    let gamepad = null;
-    window.addEventListener('gamepadconnected', (e) => {
-      gamepad = e.gamepad;
-      console.log('Joy-Con connected:', gamepad.id);  // Should show "Joy-Con (R)" or similar
-    });
+          icons.forEach(icon => {
+            const rect = icon.getBoundingClientRect();
+            const cx = rect.left + rect.width / 2;
+            const cy = rect.top + rect.height / 2;
+            const dist = Math.hypot(cx - cursorX, cy - cursorY);
+            if (dist < minDist) {
+              minDist = dist;
+              closest = icon;
+            }
+          });
 
-    function checkGamepad() {
-      const gps = navigator.getGamepads();
-      if (gps && gps[0]) {  // Joy-Con R often index 0
-        const gp = gps[0];
-        // Joy-Con R buttons: A is often button 0, B=1, X=3, Y=2 (may vary)
-        if (gp.buttons[0].pressed) {  // Press A to select highlighted icon
-          if (currentIcon) {
-            selectItem(currentIcon.dataset.action);
+          if (closest && minDist < 150) { // Tune threshold for "near cursor"
+            selectItem(closest.dataset.action);
           }
         }
       }
-      requestAnimationFrame(checkGamepad);
+      requestAnimationFrame(pollGamepad);
     }
-    checkGamepad();
+    pollGamepad();
+
+    window.addEventListener('gamepadconnected', (e) => {
+      status.textContent = "Joy-Con (R) connected! Joystick to aim, ZR to select.";
+      console.log('Connected:', e.gamepad.id);
+    });
 
     function selectItem(action) {
       alert(`Selected: ${action}!`);
-      // Change to real action, e.g., window.location = `https://${action}.com`
+      status.textContent = `Selected: ${action}`;
+      // Optional: flash or animate selected icon
     }
 
-    // Fullscreen on interaction
+    // Fullscreen
     document.addEventListener('touchend', () => {
       document.documentElement.requestFullscreen?.();
     }, { once: true });
