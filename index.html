@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"/>
-  <title>Vision Pro Menu - Stereo + Joy-Con Fixed Joystick</title>
+  <title>Vision Pro Menu - Stereo + Joy-Con StickR Fixed</title>
   <style>
     * { margin:0; padding:0; box-sizing:border-box; }
     html, body { height:100%; overflow:hidden; margin:0; background:#000; font-family: -apple-system, sans-serif; color:white; }
@@ -102,13 +102,13 @@
       transform: translate(-50%, -50%);
       z-index: 99;
       box-shadow: 0 0 20px rgba(100, 220, 255, 0.9);
-      transition: left 0.1s, top 0.1s;
+      transition: left 0.08s linear, top 0.08s linear;
     }
   </style>
 </head>
 <body>
 
-  <div id="status">Joy-Con (R): Right stick to move cursor. ZR to select. Press any button to activate if stuck.</div>
+  <div id="status">Joy-Con (R): Right stick to move cursor (expect axes[2/3] since 4 axes detected). ZR to select. Press any button if no response.</div>
   <div id="cursor"></div>
 
   <div id="container">
@@ -149,8 +149,8 @@
 
     let cursorX = window.innerWidth / 2;
     let cursorY = window.innerHeight / 2;
-    const sensitivity = 220;
-    const deadzone = 0.18;
+    const sensitivity = 280; // Increased slightly for easier movement
+    const deadzone = 0.15;
 
     // Passthrough
     async function startCamera() {
@@ -173,26 +173,27 @@
         if (!gp) continue;
         detected = true;
 
-        // Try different axis pairs for right stick
         let stickX = 0, stickY = 0;
-        // Common for single Joy-Con R: axes[2]=X, axes[3]=Y
-        if (Math.abs(gp.axes[2] || 0) > deadzone || Math.abs(gp.axes[3] || 0) > deadzone) {
+        let axisUsed = "unknown";
+
+        // Prioritize axes[2/3] since you have exactly 4 axes (common for Joy-Con R alone)
+        if (gp.axes.length >= 4 && (Math.abs(gp.axes[2] || 0) > deadzone || Math.abs(gp.axes[3] || 0) > deadzone)) {
           stickX = gp.axes[2] || 0;
           stickY = gp.axes[3] || 0;
-          status.textContent = "Using axes[2/3] for stickR";
+          axisUsed = "axes[2/3]";
         } else if (Math.abs(gp.axes[0] || 0) > deadzone || Math.abs(gp.axes[1] || 0) > deadzone) {
           stickX = gp.axes[0] || 0;
           stickY = gp.axes[1] || 0;
-          status.textContent = "Using axes[0/1] for stickR";
-        } else if (gp.axes.length >= 6 && (Math.abs(gp.axes[4] || 0) > deadzone || Math.abs(gp.axes[5] || 0) > deadzone)) {
-          stickX = gp.axes[4] || 0;
-          stickY = gp.axes[5] || 0;
-          status.textContent = "Using axes[4/5] for stickR";
+          axisUsed = "axes[0/1]";
+        }
+
+        if (axisUsed !== "unknown") {
+          status.textContent = `Joy-Con connected | Using ${axisUsed} for right stick`;
         }
 
         if (Math.abs(stickX) > deadzone || Math.abs(stickY) > deadzone) {
           cursorX += stickX * sensitivity;
-          cursorY -= stickY * sensitivity; // Invert Y
+          cursorY -= stickY * sensitivity;
 
           cursorX = Math.max(0, Math.min(window.innerWidth, cursorX));
           cursorY = Math.max(0, Math.min(window.innerHeight, cursorY));
@@ -200,7 +201,7 @@
           cursor.style.left = cursorX + 'px';
           cursor.style.top = cursorY + 'px';
 
-          // Highlight closest
+          // Highlight closest icon
           let closest = null;
           let minDist = Infinity;
           icons.forEach(i => {
@@ -212,7 +213,7 @@
           if (closest && minDist < 160) closest.classList.add('highlight');
         }
 
-        // ZR press detection
+        // ZR (flexible)
         const zrPressed = gp.buttons[7]?.pressed || (gp.axes[5] > 0.4) || gp.buttons[5]?.pressed || gp.buttons[6]?.pressed;
         if (zrPressed) {
           let closest = null;
@@ -226,14 +227,14 @@
         }
       }
 
-      if (!detected) status.textContent = "No Joy-Con detected - press any button or reconnect via Bluetooth.";
+      if (!detected) status.textContent = "No Joy-Con - press any button or reconnect Bluetooth.";
       requestAnimationFrame(pollGamepad);
     }
     pollGamepad();
 
     window.addEventListener('gamepadconnected', (e) => {
-      status.textContent = "Joy-Con connected! Try moving right stick. Axes detected: " + (e.gamepad.axes.length || 'unknown');
-      console.log('Joy-Con:', e.gamepad.id, 'Axes count:', e.gamepad.axes.length);
+      status.textContent = `Joy-Con connected | Axes: ${e.gamepad.axes.length} (expect right stick on [2/3])`;
+      console.log('Joy-Con details:', e.gamepad);
     });
 
     function selectItem(action) {
