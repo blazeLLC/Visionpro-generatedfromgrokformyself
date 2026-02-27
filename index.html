@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"/>
-  <title>Vision Pro Menu - Stereo + Joy-Con StickR (Locked axes[2/3])</title>
+  <title>Vision Pro Menu - Stereo + Joy-Con ABXY as D-Pad + ZR Select</title>
   <style>
     * { margin:0; padding:0; box-sizing:border-box; }
     html, body { height:100%; overflow:hidden; margin:0; background:#000; font-family: -apple-system, sans-serif; color:white; }
@@ -55,7 +55,7 @@
       align-items: center;
       justify-content: center;
       font-size: 62px;
-      transition: all 0.4s;
+      transition: all 0.4s cubic-bezier(0.23, 1, 0.32, 1);
       position: relative;
     }
 
@@ -77,7 +77,10 @@
       white-space: nowrap;
     }
 
-    .app-icon.highlight .app-label { opacity: 1; transform: translateX(-50%) translateY(-16px); }
+    .app-icon.highlight .app-label {
+      opacity: 1;
+      transform: translateX(-50%) translateY(-16px);
+    }
 
     #status {
       position: fixed;
@@ -102,13 +105,13 @@
       transform: translate(-50%, -50%);
       z-index: 99;
       box-shadow: 0 0 20px rgba(100, 220, 255, 0.9);
-      transition: left 0.08s linear, top 0.08s linear;
+      transition: left 0.12s linear, top 0.12s linear;
     }
   </style>
 </head>
 <body>
 
-  <div id="status">Joy-Con (R): Right stick (locked axes[2/3]) to move cursor. Hold SL + stick to debug raw values. ZR to select. Press any button if stuck.</div>
+  <div id="status">Joy-Con (R): Use A/B/X/Y as D-Pad to move cursor. ZR to select. Press any button to activate.</div>
   <div id="cursor"></div>
 
   <div id="container">
@@ -149,8 +152,8 @@
 
     let cursorX = window.innerWidth / 2;
     let cursorY = window.innerHeight / 2;
-    const sensitivity = 320;
-    const deadzone = 0.12;
+    const stepSize = 35;  // pixels per button press (adjust for speed)
+    const moveInterval = 80;  // ms between repeated moves when holding button
 
     // Passthrough
     async function startCamera() {
@@ -165,7 +168,46 @@
     }
     startCamera();
 
-    let debugSL = false;
+    // Button repeat handling
+    let moveTimer = null;
+    let currentDirection = null;
+
+    function moveCursor(dx, dy) {
+      cursorX += dx * stepSize;
+      cursorY += dy * stepSize;
+
+      cursorX = Math.max(0, Math.min(window.innerWidth, cursorX));
+      cursorY = Math.max(0, Math.min(window.innerHeight, cursorY));
+
+      cursor.style.left = cursorX + 'px';
+      cursor.style.top = cursorY + 'px';
+
+      // Highlight closest icon
+      let closest = null;
+      let minDist = Infinity;
+      icons.forEach(i => {
+        i.classList.remove('highlight');
+        const rect = i.getBoundingClientRect();
+        const cx = rect.left + rect.width / 2;
+        const cy = rect.top + rect.height / 2;
+        const dist = Math.hypot(cx - cursorX, cy - cursorY);
+        if (dist < minDist) { minDist = dist; closest = i; }
+      });
+      if (closest && minDist < 160) closest.classList.add('highlight');
+    }
+
+    function startMove(dx, dy) {
+      if (moveTimer) clearInterval(moveTimer);
+      moveCursor(dx, dy);
+      moveTimer = setInterval(() => moveCursor(dx, dy), moveInterval);
+    }
+
+    function stopMove() {
+      if (moveTimer) {
+        clearInterval(moveTimer);
+        moveTimer = null;
+      }
+    }
 
     function pollGamepad() {
       const gps = navigator.getGamepads ? navigator.getGamepads() : [];
@@ -175,43 +217,25 @@
         if (!gp) continue;
         detected = true;
 
-        // Locked to axes[2/3] for Joy-Con (R) with 4 axes
-        let stickX = gp.axes[2] || 0;
-        let stickY = gp.axes[3] || 0;
+        // Joy-Con (R) face buttons as D-Pad:
+        // Typical mapping on iOS: A=0, B=1, X=3, Y=2 (may vary slightly)
+        const upPressed    = gp.buttons[3]?.pressed || false;  // X (up)
+        const downPressed  = gp.buttons[0]?.pressed || false;  // A (down)
+        const leftPressed  = gp.buttons[2]?.pressed || false;  // Y (left)
+        const rightPressed = gp.buttons[1]?.pressed || false;  // B (right)
 
-        // Debug mode: Hold SL (often button[4] or button[6]) to show raw values
-        debugSL = gp.buttons[4]?.pressed || gp.buttons[6]?.pressed || false;
+        if (upPressed)    startMove(0, -1);   // up
+        else if (downPressed)  startMove(0, 1);    // down
+        else if (leftPressed)  startMove(-1, 0);   // left
+        else if (rightPressed) startMove(1, 0);    // right
+        else stopMove();
 
-        if (Math.abs(stickX) > deadzone || Math.abs(stickY) > deadzone) {
-          status.textContent = `Right stick active (axes[2/3]): X=${stickX.toFixed(2)}, Y=${stickY.toFixed(2)}`;
+        // ZR to select (flexible detection)
+        const zrPressed = gp.buttons[7]?.pressed ||
+                          (gp.axes[5] > 0.4) ||
+                          gp.buttons[5]?.pressed ||
+                          gp.buttons[6]?.pressed;
 
-          cursorX += stickX * sensitivity;
-          cursorY -= stickY * sensitivity;
-
-          cursorX = Math.max(0, Math.min(window.innerWidth, cursorX));
-          cursorY = Math.max(0, Math.min(window.innerHeight, cursorY));
-
-          cursor.style.left = cursorX + 'px';
-          cursor.style.top = cursorY + 'px';
-
-          // Highlight closest
-          let closest = null;
-          let minDist = Infinity;
-          icons.forEach(i => {
-            i.classList.remove('highlight');
-            const rect = i.getBoundingClientRect();
-            const cx = rect.left + rect.width / 2;
-            const cy = rect.top + rect.height / 2;
-            const dist = Math.hypot(cx - cursorX, cy - cursorY);
-            if (dist < minDist) { minDist = dist; closest = i; }
-          });
-          if (closest && minDist < 160) closest.classList.add('highlight');
-        } else if (debugSL) {
-          status.textContent = `Debug SL held: Raw X=${stickX.toFixed(2)}, Y=${stickY.toFixed(2)}`;
-        }
-
-        // ZR
-        const zrPressed = gp.buttons[7]?.pressed || (gp.axes[5] > 0.4) || gp.buttons[5]?.pressed || gp.buttons[6]?.pressed;
         if (zrPressed) {
           let closest = null;
           let minDist = Infinity;
@@ -222,18 +246,22 @@
             const dist = Math.hypot(cx - cursorX, cy - cursorY);
             if (dist < minDist) { minDist = dist; closest = i; }
           });
-          if (closest && minDist < 160) selectItem(closest.dataset.action);
+          if (closest && minDist < 160) {
+            selectItem(closest.dataset.action);
+            // Prevent rapid selects: add cooldown
+            setTimeout(() => {}, 400);
+          }
         }
       }
 
-      if (!detected) status.textContent = "No Joy-Con - press any button or re-pair Bluetooth.";
+      if (!detected) status.textContent = "No Joy-Con detected - press any button or reconnect.";
       requestAnimationFrame(pollGamepad);
     }
     pollGamepad();
 
     window.addEventListener('gamepadconnected', (e) => {
-      status.textContent = `Joy-Con connected | Axes: ${e.gamepad.axes.length} - Locked to [2/3] for right stick`;
-      console.log('Joy-Con:', e.gamepad);
+      status.textContent = `Joy-Con (R) connected! Use A/B/X/Y as D-Pad to move cursor, ZR to select.`;
+      console.log('Connected:', e.gamepad.id, 'Buttons:', e.gamepad.buttons.length);
     });
 
     function selectItem(action) {
@@ -241,7 +269,11 @@
       status.textContent = `Selected: ${action}`;
     }
 
-    document.addEventListener('touchend', () => document.documentElement.requestFullscreen?.(), { once: true });
+    // Fullscreen on tap
+    document.addEventListener('touchend', () => {
+      document.documentElement.requestFullscreen?.();
+    }, { once: true });
   </script>
+
 </body>
 </html>
